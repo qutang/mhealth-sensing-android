@@ -43,12 +43,14 @@ public class SensingService extends Service implements SensorEventListener2 {
 
     @Override
     public void onSensorChanged(SensorEvent sensorEvent) {
-
+        // depend on device model, sensor event may be interpreted differently
+        // Reference: http://stackoverflow.com/questions/5500765/accelerometer-sensorevent-timestamp
         long ts = 0;
         if(Math.abs(sensorEvent.timestamp / 1000000L - System.currentTimeMillis()) < 3600000){
             // the sensor event timestamp is the actual time
             ts = sensorEvent.timestamp / 1000000L;
         }else{
+            // the sensor event timestamp is the elapsed nano seconds since boot up
             ts = System.currentTimeMillis()
                     + (sensorEvent.timestamp - System.nanoTime()) / 1000000L;
         }
