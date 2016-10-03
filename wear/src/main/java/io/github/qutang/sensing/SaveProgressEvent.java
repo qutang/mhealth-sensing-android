@@ -5,7 +5,9 @@ package io.github.qutang.sensing;
  */
 public class SaveProgressEvent {
     public final int value;
-    public SaveProgressEvent(int current) {
+    public final String name;
+    public SaveProgressEvent(String name, int current) {
         value = current;
+        this.name = name;
     }
 }

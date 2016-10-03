@@ -43,12 +43,22 @@ public class SensingService extends Service implements SensorEventListener2 {
 
     @Override
     public void onSensorChanged(SensorEvent sensorEvent) {
+
+        long ts = 0;
+        if(Math.abs(sensorEvent.timestamp / 1000000L - System.currentTimeMillis()) < 3600000){
+            // the sensor event timestamp is the actual time
+            ts = sensorEvent.timestamp / 1000000L;
+        }else{
+            ts = System.currentTimeMillis()
+                    + (sensorEvent.timestamp - System.nanoTime()) / 1000000L;
+        }
         counter++;
-        if(previousSr == 0) previousSr = sensorEvent.timestamp / 1000000;
-        if(previousReport == 0) previousReport = sensorEvent.timestamp / 1000000;
-        if(sensorEvent.timestamp / 1000000 - previousSr >= 1000){ // sampling rate update every 1s
-            previousSr = sensorEvent.timestamp / 1000000;
+        if(previousSr == 0) previousSr = ts;
+        if(previousReport == 0) previousReport = ts;
+        if(ts - previousSr >= 1000){ // sampling rate update every 1s
+            previousSr = ts;
             Log.i("Sampling rate", String.valueOf(counter));
+            ApplicationState.getState().addWatchSamplingRateDataPoint(ts, counter);
             EventBus.getDefault().post(new ContentUpdateEvent(
                     String.format("%02d:%02d:%02d",
                             seconds / 3600,
@@ -58,10 +68,10 @@ public class SensingService extends Service implements SensorEventListener2 {
             seconds++;
             Log.i("Data size", String.valueOf(ApplicationState.getState().watchAccelData.size()));
         }
-        if(sensorEvent.timestamp / 1000000 - previousReport >= 50){ // chart updating at 20 Hz
-            previousReport = sensorEvent.timestamp / 1000000;
+        if(ts - previousReport >= 50){ // chart updating at 20 Hz
+            previousReport = ts;
         }
-        ApplicationState.getState().addWatchAccelDataPoint(sensorEvent.timestamp / 1000000, sensorEvent.values);
+        ApplicationState.getState().addWatchAccelDataPoint(ts, sensorEvent.values);
     }
 
     @Override

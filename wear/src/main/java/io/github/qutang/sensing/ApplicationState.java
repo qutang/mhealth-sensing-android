@@ -58,6 +58,7 @@ public class ApplicationState {
     }
 
     public ArrayList<DataPoint> watchAccelData = new ArrayList<>();
+    public ArrayList<DataPoint> watchSamplingRateData = new ArrayList<>();
 
     public synchronized void addWatchAccelDataPoint(long ts, float[] values){
         float[] scaled = new float[3];
@@ -67,11 +68,16 @@ public class ApplicationState {
         watchAccelData.add(new DataPoint(ts, scaled));
     }
 
+    public synchronized void addWatchSamplingRateDataPoint(long ts, float sr) {
+        watchSamplingRateData.add(new DataPoint(ts, new float[]{sr}));
+    }
+
     public synchronized void saveData(){
         AsyncExecutor.create().execute(new AsyncExecutor.RunnableEx() {
             @Override
             public void run() throws Exception {
                 saveWatchAccelData();
+                saveWatchSamplingRateData();
                 saveSensorInfo(watchAccelSensor, "WatchAccelerometer.meta.csv");
                 zipEverything();
                 EventBus.getDefault().post(new SaveFinishedEvent());
@@ -81,7 +87,7 @@ public class ApplicationState {
     }
 
     private void zipEverything() throws ZipException {
-        File zipFile = new File(Environment.getExternalStorageDirectory() + "/sensing", "data.zip");
+        File zipFile = new File(Environment.getExternalStorageDirectory() + "/sensing", "watch.zip");
         if(!zipFile.getParentFile().exists()) zipFile.getParentFile().mkdirs();
         if(zipFile.exists()) zipFile.delete();
         ZipFile zip = new ZipFile(zipFile);
@@ -111,7 +117,37 @@ public class ApplicationState {
                 writer.write(System.lineSeparator());
                 if((current = Math.round(count / (float) watchAccelData.size() * 100)) != previous){
                     previous = current;
-                    EventBus.getDefault().post(new SaveProgressEvent(current));
+                    EventBus.getDefault().post(new SaveProgressEvent("watch accelerometer", current));
+                }
+            }
+            writer.flush();
+            writer.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    private void saveWatchSamplingRateData()  {
+        File savedFile = new File(Environment.getExternalStorageDirectory() + "/sensing/data", "WatchAccelerometerSamplingRate.sensor.csv");
+        if(!savedFile.getParentFile().exists()) savedFile.getParentFile().mkdirs();
+        if(savedFile.exists()) savedFile.delete();
+        if(watchSamplingRateData.size() <= 0) return;
+        BufferedWriter writer = null;
+        try {
+            writer = new BufferedWriter(new FileWriter(savedFile, false));
+            writer.write("HEADER_TIME_STAMP,SR");
+            writer.write(System.lineSeparator());
+            int count = 0;
+            int previous = 0;
+            int current;
+            for(DataPoint datapoint : watchSamplingRateData){
+                count++;
+                writer.write(datapoint.toString());
+                writer.write(System.lineSeparator());
+                if((current = Math.round(count / (float) watchSamplingRateData.size() * 100)) != previous){
+                    previous = current;
+                    EventBus.getDefault().post(new SaveProgressEvent("watch sampling rate", current));
                 }
             }
             writer.flush();
@@ -132,4 +168,6 @@ public class ApplicationState {
         writer.flush();
         writer.close();
     }
+
+
 }

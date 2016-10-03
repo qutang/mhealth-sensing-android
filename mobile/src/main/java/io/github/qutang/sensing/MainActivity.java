@@ -64,11 +64,6 @@ public class MainActivity extends AppCompatActivity {
         if(event.show){
             notification.show();
         }
-        switch(event.message){
-            case "Saved":
-                shareFile(new File(Environment.getExternalStorageDirectory() + "/sensing", "data.zip"));
-                break;
-        }
     }
 
     @Override
@@ -86,12 +81,12 @@ public class MainActivity extends AppCompatActivity {
     @OnClick(R.id.button_record)
     public void record(View view){
         if(state.isRecording){ // before recording stop
-            notification.dismiss();
             recordButton.setImageResource(R.drawable.ic_play_dark);
             stopService(new Intent(MainActivity.this, SensingService.class));
         }else{ // before recording start
             EventBus.getDefault().post(new ResetChartEvent());
             ApplicationState.getState().phoneAccelData.clear();
+            ApplicationState.getState().phoneSamplingRateData.clear();
             state.setElapsedSeconds(0);
             notification = Snackbar.make(view, "Recording: " + "00:00:00", Snackbar.LENGTH_INDEFINITE)
                     .setAction("Action", null);
@@ -103,12 +98,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @OnClick(R.id.button_save)
-    public void save(View view){
-        EventBus.getDefault().post(new SnackBarMessageEvent("Saving data: 0%", true));
-        ApplicationState.getState().saveData();
-    }
-
-    private void shareFile(File file){
+    public void shareFile(View view){
+        File file = new File(Environment.getExternalStorageDirectory() + "/sensing", "phone.zip");
         MimeTypeMap mime = MimeTypeMap.getSingleton();
         String ext = file.getName().substring(file.getName().indexOf(".") + 1);
         String type = mime.getMimeTypeFromExtension(ext);

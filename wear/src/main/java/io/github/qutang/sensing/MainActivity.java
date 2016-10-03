@@ -70,6 +70,7 @@ public class MainActivity extends Activity {
             title.setText("Saving data...");
         }else{
             ApplicationState.getState().watchAccelData.clear();
+            ApplicationState.getState().watchSamplingRateData.clear();
             startService(new Intent(MainActivity.this, SensingService.class));
             recordButton.setText("Stop");
             title.setText("Recording...");
@@ -86,7 +87,7 @@ public class MainActivity extends Activity {
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void onSaveProgres(SaveProgressEvent event){
-        title.setText("Saving data... " + event.value + "%");
+        title.setText("Saving " + event.name + ": " + event.value + "%");
     }
 
     private void save(){

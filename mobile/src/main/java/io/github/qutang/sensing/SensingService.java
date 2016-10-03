@@ -46,12 +46,21 @@ public class SensingService extends Service implements SensorEventListener2 {
 
     @Override
     public void onSensorChanged(SensorEvent sensorEvent) {
+        long ts = 0;
+        if(Math.abs(sensorEvent.timestamp / 1000000L - System.currentTimeMillis()) < 3600000){
+            // the sensor event timestamp is the actual time
+            ts = sensorEvent.timestamp / 1000000L;
+        }else{
+            ts = System.currentTimeMillis()
+                    + (sensorEvent.timestamp - System.nanoTime()) / 1000000L;
+        }
         counter++;
-        if(previousSr == 0) previousSr = sensorEvent.timestamp / 1000000;
-        if(sensorEvent.timestamp / 1000000 - previousSr >= 1000){
+        if(previousSr == 0) previousSr = ts;
+        if(ts - previousSr >= 1000){
             ApplicationState.getState().setElapsedSeconds(ApplicationState.getState().elapsedSeconds + 1);
             Log.i("Accel Sampling rate", String.valueOf(counter));
-            previousSr = sensorEvent.timestamp / 1000000;
+            ApplicationState.getState().addPhoneSamplingRateDataPoint(ts, counter);
+            previousSr = ts;
             counter = 0;
             EventBus.getDefault().post(new SnackBarMessageEvent("Recording: " +
                     String.format("%02d:%02d:%02d",
@@ -59,13 +68,13 @@ public class SensingService extends Service implements SensorEventListener2 {
                             ApplicationState.getState().elapsedSeconds % 3600 / 60,
                             ApplicationState.getState().elapsedSeconds % 3600 % 60), false));
         }
-        if(previousReport == 0) previousReport = sensorEvent.timestamp / 1000000;
-        if(sensorEvent.timestamp / 1000000 - previousReport >= 50){ // chart updating at 20 Hz
-            previousReport = sensorEvent.timestamp / 1000000;
+        if(previousReport == 0) previousReport = ts;
+        if(ts - previousReport >= 50){ // chart updating at 20 Hz
+            previousReport = ts;
             EventBus.getDefault().post(sensorEvent);
         }
 
-        ApplicationState.getState().addPhoneAccelDataPoint(sensorEvent.timestamp / 1000000, sensorEvent.values);
+        ApplicationState.getState().addPhoneAccelDataPoint(ts, sensorEvent.values);
     }
 
     @Override
@@ -127,6 +136,12 @@ public class SensingService extends Service implements SensorEventListener2 {
         stopForeground(true);
         // Tell the user we stopped.
         Toast.makeText(this, "Stopped sensing", Toast.LENGTH_SHORT).show();
+        save();
+    }
+
+    public void save(){
+        EventBus.getDefault().post(new SnackBarMessageEvent("Saving data: 0%", false));
+        ApplicationState.getState().saveData();
     }
 
     @Override

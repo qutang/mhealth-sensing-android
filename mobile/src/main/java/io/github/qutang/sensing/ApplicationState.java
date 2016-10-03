@@ -66,6 +66,7 @@ public class ApplicationState {
     }
 
     public ArrayList<DataPoint> phoneAccelData = new ArrayList<>();
+    public ArrayList<DataPoint> phoneSamplingRateData = new ArrayList<>();
 
     public synchronized void addPhoneAccelDataPoint(long ts, float[] values){
         float[] scaled = new float[3];
@@ -75,11 +76,16 @@ public class ApplicationState {
         phoneAccelData.add(new DataPoint(ts, scaled, "phone_accel"));
     }
 
+    public synchronized void addPhoneSamplingRateDataPoint(long ts, float sr){
+        phoneSamplingRateData.add(new DataPoint(ts, new float[]{sr}, "phone_sr"));
+    }
+
     public synchronized void saveData(){
         AsyncExecutor.create().execute(new AsyncExecutor.RunnableEx() {
             @Override
             public void run() throws Exception {
                 savePhoneAccelData();
+                savePhoneSamplingRateData();
                 saveSensorInfo(phoneAccelSensor, "PhoneAccelerometer.meta.csv");
                 zipEverything();
                 EventBus.getDefault().post(new SnackBarMessageEvent("Saved", false));
@@ -88,7 +94,8 @@ public class ApplicationState {
     }
 
     private void zipEverything() throws ZipException {
-        File zipFile = new File(Environment.getExternalStorageDirectory() + "/sensing", "data.zip");
+        EventBus.getDefault().post(new SnackBarMessageEvent("Zipping files...", false));
+        File zipFile = new File(Environment.getExternalStorageDirectory() + "/sensing", "phone.zip");
         if(!zipFile.getParentFile().exists()) zipFile.getParentFile().mkdirs();
         if(zipFile.exists()) zipFile.delete();
         ZipFile zip = new ZipFile(zipFile);
@@ -116,7 +123,31 @@ public class ApplicationState {
             writer.write(System.lineSeparator());
             if((current = Math.round(count / (float)phoneAccelData.size() * 100)) != previous){
                 previous = current;
-                EventBus.getDefault().post(new SnackBarMessageEvent("Saving data... " + current + "%", false));
+                EventBus.getDefault().post(new SnackBarMessageEvent("Saving phone accelerometer data: " + current + "%", false));
+            }
+        }
+        writer.flush();
+        writer.close();
+    }
+
+    private void savePhoneSamplingRateData() throws IOException {
+        File savedFile = new File(Environment.getExternalStorageDirectory() + "/sensing/data", "PhoneAccelerometerSamplingRate.sensor.csv");
+        if(!savedFile.getParentFile().exists()) savedFile.getParentFile().mkdirs();
+        if(savedFile.exists()) savedFile.delete();
+        if(phoneSamplingRateData.size() <= 0) return;
+        BufferedWriter writer = new BufferedWriter(new FileWriter(savedFile, false));
+        writer.write("HEADER_TIME_STAMP,SR");
+        writer.write(System.lineSeparator());
+        int count = 0;
+        int previous = 0;
+        int current;
+        for(DataPoint datapoint : phoneSamplingRateData){
+            count++;
+            writer.write(datapoint.toString());
+            writer.write(System.lineSeparator());
+            if((current = Math.round(count / (float)phoneSamplingRateData.size() * 100)) != previous){
+                previous = current;
+                EventBus.getDefault().post(new SnackBarMessageEvent("Saving phone sampling rate data: " + current + "%", false));
             }
         }
         writer.flush();
