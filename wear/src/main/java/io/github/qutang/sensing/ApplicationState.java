@@ -41,7 +41,7 @@ public class ApplicationState {
         this.watchAccelSensor = sensorInfo;
     }
 
-    public int watchAccelDelay = SensorManager.SENSOR_DELAY_UI;
+    public int watchAccelDelay = SensorManager.SENSOR_DELAY_FASTEST;
     // NEXUS 4
     // game delay is 50 Hz
     // normal and UI delay is 5 Hz
@@ -52,6 +52,12 @@ public class ApplicationState {
     // normal delay is 5 Hz
     // game delay is 50 Hz
     // UI delay is 15 Hz
+
+    // WATCH
+    // UI delay is 15 Hz unless being touched
+    // fastest is 200 Hz
+    // game delay is 50 Hz
+    // normal delay is 5 Hz
 
     public synchronized void setWatchAccelDelay(int sensorDelay){
         watchAccelDelay = sensorDelay;

@@ -1,6 +1,8 @@
 package io.github.qutang.sensing;
 
 import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -31,10 +33,12 @@ public class SensingService extends Service implements SensorEventListener2 {
     private SensorManager mSensorManager;
     private Sensor mSensor;
     private int counter = 0;
+    private int anotherCounter = 0;
     private int seconds = 0;
     private SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
     private long previousSr = 0;
     private long previousReport = 0;
+    private NotificationManager nm;
 
     @Override
     public void onFlushCompleted(Sensor sensor) {
@@ -61,19 +65,25 @@ public class SensingService extends Service implements SensorEventListener2 {
             previousSr = ts;
             Log.i("Sampling rate", String.valueOf(counter));
             ApplicationState.getState().addWatchSamplingRateDataPoint(ts, counter);
-            EventBus.getDefault().post(new ContentUpdateEvent(
-                    String.format("%02d:%02d:%02d",
-                            seconds / 3600,
-                            seconds % 3600 / 60,
-                            seconds % 3600 % 60) + ", " + counter + " Hz"));
+            String timer = String.format("%02d:%02d:%02d",
+                    seconds / 3600,
+                    seconds % 3600 / 60,
+                    seconds % 3600 % 60);
+            EventBus.getDefault().post(new ContentUpdateEvent(timer + ", " + counter + " Hz, " + anotherCounter + " Hz"));
+            Notification notification = createForegroundNotification(timer);
+            nm.notify(NOTIFICATION_ID, notification);
             counter = 0;
+            anotherCounter = 0;
             seconds++;
             Log.i("Data size", String.valueOf(ApplicationState.getState().watchAccelData.size()));
         }
         if(ts - previousReport >= 50){ // chart updating at 20 Hz
             previousReport = ts;
         }
-        ApplicationState.getState().addWatchAccelDataPoint(ts, sensorEvent.values);
+        if(counter % 2.0 != 0) {
+            anotherCounter++;
+            ApplicationState.getState().addWatchAccelDataPoint(ts, sensorEvent.values);
+        }
     }
 
     @Override
@@ -93,8 +103,10 @@ public class SensingService extends Service implements SensorEventListener2 {
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         mSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         ApplicationState.getState().setWatchAccelSensor(getPhoneSensorInfo());
+        nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         counter = 0;
         seconds = 0;
+        anotherCounter = 0;
     }
 
     public String getPhoneSensorInfo(){
@@ -147,21 +159,34 @@ public class SensingService extends Service implements SensorEventListener2 {
     // RemoteService for a more complete example.
     private final IBinder mBinder = new LocalBinder();
 
+    private Notification createForegroundNotification(String contentText){
+        // In this sample, we'll use the same text for the ticker and the expanded notification
+        CharSequence text = "Sensing watch accelerometer";
+
+        // The PendingIntent to launch our activity if the user selects this notification
+
+        // Set the info for the views that show in the notification panel.
+        Intent notifyIntent = new Intent(this, MainActivity.class);
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                this, 0, notifyIntent, PendingIntent.FLAG_UPDATE_CURRENT
+        );
+        Notification notification = new Notification.Builder(this)
+                .setContentTitle(text)
+                .setTicker(text)  // the status text
+                .setWhen(System.currentTimeMillis())  // the time stamp
+                .setContentText(contentText)  // the contents of the entry
+                .setContentIntent(pendingIntent)
+                .setSmallIcon(android.R.drawable.ic_media_play)
+                .build();
+        return notification;
+    }
+
     /**
      * Show a notification while this service is running.
      */
     private void showNotification() {
         // In this sample, we'll use the same text for the ticker and the expanded notification
-        CharSequence text = "Sensing using phone accelerometer";
-
-        // The PendingIntent to launch our activity if the user selects this notification
-
-        // Set the info for the views that show in the notification panel.
-        Notification notification = new Notification.Builder(this)
-                .setTicker(text)  // the status text
-                .setWhen(System.currentTimeMillis())  // the time stamp
-                .setContentText(text)  // the contents of the entry
-                .build();
+        Notification notification = createForegroundNotification("00:00:00");
 
         // Send the notification.
         startForeground(NOTIFICATION_ID, notification);

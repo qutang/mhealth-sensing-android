@@ -1,5 +1,7 @@
 package io.github.qutang.sensing;
 
+import android.app.Notification;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.hardware.Sensor;
@@ -88,13 +90,17 @@ public class MainActivity extends AppCompatActivity {
             ApplicationState.getState().phoneAccelData.clear();
             ApplicationState.getState().phoneSamplingRateData.clear();
             state.setElapsedSeconds(0);
-            notification = Snackbar.make(view, "Recording: " + "00:00:00", Snackbar.LENGTH_INDEFINITE)
-                    .setAction("Action", null);
-            notification.show();
+            createSnackBarNotification(view);
             startService(new Intent(MainActivity.this, SensingService.class));
             recordButton.setImageResource(R.drawable.quantum_ic_stop_white_24);
         }
         state.setRecording(!state.isRecording);
+    }
+
+    private void createSnackBarNotification(View view){
+        notification = Snackbar.make(view, "Recording: " + "00:00:00", Snackbar.LENGTH_INDEFINITE)
+                .setAction("Action", null);
+        notification.show();
     }
 
     @OnClick(R.id.button_save)

@@ -44,9 +44,18 @@ public class MainActivity extends Activity {
             @Override
             public void onLayoutInflated(WatchViewStub stub) {
                 ButterKnife.bind(MainActivity.this,stub);
+                if(state.isRecording){
+                    recordButton.setText("Stop");
+                    title.setText("Recording...");
+                }else{
+                    recordButton.setText("Start");
+                    title.setText("Ready to record");
+                    content.setText("");
+                }
             }
         });
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
     }
 
     @Override

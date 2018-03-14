@@ -15,6 +15,7 @@ import android.os.Binder;
 import android.os.Build;
 import android.os.IBinder;
 import android.support.annotation.Nullable;
+import android.support.v4.app.NotificationManagerCompat;
 import android.util.Log;
 import android.widget.Toast;
 
@@ -38,6 +39,7 @@ public class SensingService extends Service implements SensorEventListener2 {
     private java.text.SimpleDateFormat formatter = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
     private long previousSr = 0;
     private long previousReport = 0;
+    private NotificationManager nm;
 
     @Override
     public void onFlushCompleted(Sensor sensor) {
@@ -62,11 +64,15 @@ public class SensingService extends Service implements SensorEventListener2 {
             ApplicationState.getState().addPhoneSamplingRateDataPoint(ts, counter);
             previousSr = ts;
             counter = 0;
-            EventBus.getDefault().post(new SnackBarMessageEvent("Recording: " +
-                    String.format("%02d:%02d:%02d",
-                            ApplicationState.getState().elapsedSeconds / 3600,
-                            ApplicationState.getState().elapsedSeconds % 3600 / 60,
-                            ApplicationState.getState().elapsedSeconds % 3600 % 60), false));
+            String timer = String.format("%02d:%02d:%02d",
+                    ApplicationState.getState().elapsedSeconds / 3600,
+                    ApplicationState.getState().elapsedSeconds % 3600 / 60,
+                    ApplicationState.getState().elapsedSeconds % 3600 % 60);
+            EventBus.getDefault().post(new SnackBarMessageEvent("Recording: " + timer
+                    , false));
+            Notification notification = createForegroundNotification(timer);
+            nm.notify(NOTIFICATION_ID, notification);
+
         }
         if(previousReport == 0) previousReport = ts;
         if(ts - previousReport >= 50){ // chart updating at 20 Hz
@@ -94,6 +100,7 @@ public class SensingService extends Service implements SensorEventListener2 {
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         mSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         ApplicationState.getState().setPhoneAccelSensor(getPhoneSensorInfo());
+        nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         counter = 0;
     }
 
@@ -153,21 +160,33 @@ public class SensingService extends Service implements SensorEventListener2 {
     // RemoteService for a more complete example.
     private final IBinder mBinder = new LocalBinder();
 
-    /**
-     * Show a notification while this service is running.
-     */
-    private void showNotification() {
+    private Notification createForegroundNotification(String contentText){
         // In this sample, we'll use the same text for the ticker and the expanded notification
         CharSequence text = "Sensing using phone accelerometer";
 
         // The PendingIntent to launch our activity if the user selects this notification
 
         // Set the info for the views that show in the notification panel.
+        Intent notifyIntent = new Intent(this, MainActivity.class);
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                this, 0, notifyIntent, PendingIntent.FLAG_UPDATE_CURRENT
+        );
         Notification notification = new Notification.Builder(this)
+                .setContentTitle(text)
                 .setTicker(text)  // the status text
                 .setWhen(System.currentTimeMillis())  // the time stamp
-                .setContentText(text)  // the contents of the entry
+                .setContentText(contentText)  // the contents of the entry
+                .setContentIntent(pendingIntent)
+                .setSmallIcon(R.drawable.ic_media_play)
                 .build();
+        return notification;
+    }
+
+    /**
+     * Show a notification while this service is running.
+     */
+    private void showNotification() {
+        Notification notification = createForegroundNotification("00:00:00");
 
         // Send the notification.
         startForeground(NOTIFICATION_ID, notification);

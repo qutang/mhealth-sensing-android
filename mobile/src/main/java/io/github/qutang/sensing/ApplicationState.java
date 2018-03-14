@@ -108,7 +108,10 @@ public class ApplicationState {
 
     private void savePhoneAccelData() throws IOException {
         File savedFile = new File(Environment.getExternalStorageDirectory() + "/sensing/data", "PhoneAccelerometer.sensor.csv");
-        if(!savedFile.getParentFile().exists()) savedFile.getParentFile().mkdirs();
+        if(!savedFile.getParentFile().exists()){
+            savedFile.getParentFile().mkdirs();
+            System.out.println(savedFile.getParentFile().exists());
+        }
         if(savedFile.exists()) savedFile.delete();
         if(phoneAccelData.size() <= 0) return;
         BufferedWriter writer = new BufferedWriter(new FileWriter(savedFile, false));
