@@ -39,7 +39,9 @@ public class SensingService extends Service implements SensorEventListener2 {
     private java.text.SimpleDateFormat formatter = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
     private long previousSr = 0;
     private long previousReport = 0;
+    private long previousSave = 0;
     private NotificationManager nm;
+    private Context mContext;
 
     @Override
     public void onFlushCompleted(Sensor sensor) {
@@ -79,7 +81,11 @@ public class SensingService extends Service implements SensorEventListener2 {
             previousReport = ts;
             EventBus.getDefault().post(sensorEvent);
         }
-
+        if(previousSave == 0) previousSave = ts;
+        if(ts - previousSave >= 1000 * 60){
+            previousSave = ts;
+            ApplicationState.getState().saveOnTheFly(mContext);
+        }
         ApplicationState.getState().addPhoneAccelDataPoint(ts, sensorEvent.values);
     }
 
@@ -102,6 +108,7 @@ public class SensingService extends Service implements SensorEventListener2 {
         ApplicationState.getState().setPhoneAccelSensor(getPhoneSensorInfo());
         nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         counter = 0;
+        mContext = getApplicationContext();
     }
 
     public String getPhoneSensorInfo(){
@@ -148,7 +155,7 @@ public class SensingService extends Service implements SensorEventListener2 {
 
     public void save(){
         EventBus.getDefault().post(new SnackBarMessageEvent("Saving data: 0%", false));
-        ApplicationState.getState().saveData();
+        ApplicationState.getState().saveData(mContext);
     }
 
     @Override

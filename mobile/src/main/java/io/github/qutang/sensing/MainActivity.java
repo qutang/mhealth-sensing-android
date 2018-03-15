@@ -88,6 +88,8 @@ public class MainActivity extends AppCompatActivity {
         }else{ // before recording start
             EventBus.getDefault().post(new ResetChartEvent());
             ApplicationState.getState().phoneAccelData.clear();
+            ApplicationState.getState().isWriting = false;
+            ApplicationState.getState().phoneAccelAlterBuffer.clear();
             ApplicationState.getState().phoneSamplingRateData.clear();
             state.setElapsedSeconds(0);
             createSnackBarNotification(view);
