@@ -14,6 +14,7 @@ import android.hardware.SensorManager;
 import android.os.Binder;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.PowerManager;
 import android.support.annotation.Nullable;
 import android.support.v4.app.NotificationManagerCompat;
 import android.util.Log;
@@ -36,12 +37,16 @@ public class SensingService extends Service implements SensorEventListener2 {
     private SensorManager mSensorManager;
     private Sensor mSensor;
     private int counter = 0;
-    private java.text.SimpleDateFormat formatter = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+    private java.text.SimpleDateFormat formatter;
     private long previousSr = 0;
     private long previousReport = 0;
-    private long previousSave = 0;
+    private long previousPhoneAccelSave = 0;
+    private long previousPhoneSamplingRateSave = 0;
     private NotificationManager nm;
     private Context mContext;
+    private PowerManager.WakeLock mWakeLock;
+    private ApplicationState mState;
+    private static final String TAG = "SensingService";
 
     @Override
     public void onFlushCompleted(Sensor sensor) {
@@ -50,6 +55,7 @@ public class SensingService extends Service implements SensorEventListener2 {
 
     @Override
     public void onSensorChanged(SensorEvent sensorEvent) {
+
         long ts = 0;
         if(Math.abs(sensorEvent.timestamp / 1000000L - System.currentTimeMillis()) < 3600000){
             // the sensor event timestamp is the actual time
@@ -60,16 +66,28 @@ public class SensingService extends Service implements SensorEventListener2 {
         }
         counter++;
         if(previousSr == 0) previousSr = ts;
+
+        if(previousPhoneAccelSave == 0) previousPhoneAccelSave = ts;
+        if(ts - previousPhoneAccelSave >= mState.getPhoneAccelSaveDelay()){
+            previousPhoneAccelSave = ts;
+            mState.savePhoneAccelData();
+        }
+        if(previousPhoneSamplingRateSave == 0) previousPhoneSamplingRateSave = ts;
+        if(ts - previousPhoneSamplingRateSave >= mState.getPhoneSamplingRateSaveDelay()){
+            previousPhoneSamplingRateSave = ts;
+            mState.savePhoneSamplingRateData();
+        }
+
         if(ts - previousSr >= 1000){
-            ApplicationState.getState().setElapsedSeconds(ApplicationState.getState().elapsedSeconds + 1);
-            Log.i("Accel Sampling rate", String.valueOf(counter));
-            ApplicationState.getState().addPhoneSamplingRateDataPoint(ts, counter);
+            mState.setElapsedSeconds(mState.elapsedSeconds + 1);
+            Log.i(TAG, "Accel Sampling rate, " + String.valueOf(counter));
+            mState.addPhoneSamplingRateDataPoint(ts, counter);
             previousSr = ts;
             counter = 0;
             String timer = String.format("%02d:%02d:%02d",
-                    ApplicationState.getState().elapsedSeconds / 3600,
-                    ApplicationState.getState().elapsedSeconds % 3600 / 60,
-                    ApplicationState.getState().elapsedSeconds % 3600 % 60);
+                    mState.elapsedSeconds / 3600,
+                    mState.elapsedSeconds % 3600 / 60,
+                    mState.elapsedSeconds % 3600 % 60);
             EventBus.getDefault().post(new SnackBarMessageEvent("Recording: " + timer
                     , false));
             Notification notification = createForegroundNotification(timer);
@@ -81,12 +99,7 @@ public class SensingService extends Service implements SensorEventListener2 {
             previousReport = ts;
             EventBus.getDefault().post(sensorEvent);
         }
-        if(previousSave == 0) previousSave = ts;
-        if(ts - previousSave >= 1000 * 60){
-            previousSave = ts;
-            ApplicationState.getState().saveOnTheFly(mContext);
-        }
-        ApplicationState.getState().addPhoneAccelDataPoint(ts, sensorEvent.values);
+        mState.addPhoneAccelDataPoint(ts, sensorEvent.values);
     }
 
     @Override
@@ -103,12 +116,19 @@ public class SensingService extends Service implements SensorEventListener2 {
     @Override
     public void onCreate() {
         // Display a notification about us starting.  We put an icon in the status bar.
+        mContext = getApplicationContext();
+        mState = ApplicationState.getState(mContext);
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         mSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-        ApplicationState.getState().setPhoneAccelSensor(getPhoneSensorInfo());
+        mState.setPhoneAccelSensor(getPhoneSensorInfo());
         nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         counter = 0;
-        mContext = getApplicationContext();
+        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+        mWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
+                "SensingService");
+        formatter = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+
+
     }
 
     public String getPhoneSensorInfo(){
@@ -126,7 +146,7 @@ public class SensingService extends Service implements SensorEventListener2 {
                 .append("Power,").append(mSensor.getPower()).append(System.lineSeparator())
                 .append("Type,").append(mSensor.getStringType()).append(System.lineSeparator())
                 .append("WakeUpSensor,").append(mSensor.isWakeUpSensor()).append(System.lineSeparator())
-                .append("Delay").append(ApplicationState.getState().phoneAccelDelay).append(System.lineSeparator());
+                .append("Delay").append(mState.phoneAccelDelay).append(System.lineSeparator());
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             builder.append("DynamicSensor,").append(mSensor.isDynamicSensor()).append(System.lineSeparator())
                     .append("ID,").append(mSensor.getId()).append(System.lineSeparator());
@@ -136,18 +156,27 @@ public class SensingService extends Service implements SensorEventListener2 {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Log.i("LocalService", "Received start id " + startId + ": " + intent);
+        Log.i(TAG, "Received start id " + startId + ": " + intent);
+        mWakeLock.acquire();
+        Log.i(TAG, "Aquired wakelock");
+
         showNotification();
-        mSensorManager.registerListener(this, mSensor, ApplicationState.getState().phoneAccelDelay);
-        ApplicationState.getState().setElapsedSeconds(0);
+        Log.i(TAG, "Started foreground service");
+        mSensorManager.registerListener(this, mSensor, mState.phoneAccelDelay);
+        Log.i(TAG, "Registered sensor event listener");
+        mState.setElapsedSeconds(0);
         return START_STICKY;
     }
 
     @Override
     public void onDestroy() {
         mSensorManager.unregisterListener(this, mSensor);
+        Log.i(TAG, "Unregistered sensor event listener");
         // Cancel the persistent notification.
         stopForeground(true);
+        Log.i(TAG, "Stopped foreground service");
+        mWakeLock.release();
+        Log.i(TAG, "Released wakelock");
         // Tell the user we stopped.
         Toast.makeText(this, "Stopped sensing", Toast.LENGTH_SHORT).show();
         save();
@@ -155,7 +184,7 @@ public class SensingService extends Service implements SensorEventListener2 {
 
     public void save(){
         EventBus.getDefault().post(new SnackBarMessageEvent("Saving data: 0%", false));
-        ApplicationState.getState().saveData(mContext);
+        mState.saveData(mContext);
     }
 
     @Override

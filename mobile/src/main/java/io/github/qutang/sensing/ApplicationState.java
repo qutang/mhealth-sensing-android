@@ -1,17 +1,12 @@
 package io.github.qutang.sensing;
 
-import android.*;
 import android.Manifest;
-import android.app.Application;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.hardware.SensorManager;
 import android.os.Environment;
-import android.provider.ContactsContract;
 import android.support.v4.content.ContextCompat;
 import android.telephony.TelephonyManager;
-
-import com.github.mikephil.charting.data.LineData;
 
 import net.lingala.zip4j.core.ZipFile;
 import net.lingala.zip4j.exception.ZipException;
@@ -25,10 +20,9 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.lang.reflect.Array;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+
+import io.github.qutang.sensing.shared.DataPoint;
+import io.github.qutang.sensing.shared.DataSet;
 
 /**
  * Created by Qu on 9/28/2016.
@@ -36,14 +30,35 @@ import java.util.List;
 
 public class ApplicationState {
     private static ApplicationState state;
+    private DataSet phoneAccelDataSet;
+    private DataSet phoneSamplingRateDataSet;
+    private Context mContext;
 
-    private ApplicationState(){}
-    public static ApplicationState getState(){
+    private ApplicationState(Context mContext){
+        this.mContext = mContext;
+        this.phoneAccelDataSet = new DataSet(android.os.Build.MODEL.replace(" ", ""), getIMEI(mContext), "AccelerometerCalibrated", "sensor", "HEADER_TIME_STAMP,X,Y,Z", 60 * 1000);
+        this.phoneSamplingRateDataSet = new DataSet(android.os.Build.MODEL.replace(" ", ""), getIMEI(mContext), "AccelerometerSamplingRate", "feature", "HEADER_TIME_STAMP,SR", 60 * 1000);
+        this.phoneAccelDataSet.registerProgressListener(new DataSet.OnDataSaveProgressListener() {
+            @Override
+            public void updateProgress(int percent) {
+                EventBus.getDefault().post(new SnackBarMessageEvent("Saving phone accelerometer data: " + percent + "%", false));
+            }
+        });
+        this.phoneSamplingRateDataSet.registerProgressListener(new DataSet.OnDataSaveProgressListener() {
+            @Override
+            public void updateProgress(int percent) {
+                EventBus.getDefault().post(new SnackBarMessageEvent("Saving phone accelerometer sampling rate data: " + percent + "%", false));
+            }
+        });
+    }
+
+    public static ApplicationState getState(Context mContext){
         if(state == null){
-            state = new ApplicationState();
+            state = new ApplicationState(mContext);
         }
         return state;
     }
+
     public boolean isRecording = false;
     public synchronized void setRecording(boolean isRecording){
         this.isRecording = isRecording;
@@ -59,7 +74,7 @@ public class ApplicationState {
         this.phoneAccelSensor = sensorInfo;
     }
 
-    private Context mContext;
+
 
     public boolean isWriting = false;
 
@@ -79,59 +94,74 @@ public class ApplicationState {
         phoneAccelDelay = sensorDelay;
     }
 
-    public ArrayList<DataPoint> phoneAccelData = new ArrayList<>();
-    public ArrayList<DataPoint> phoneAccelAlterBuffer = new ArrayList<>();
-    public ArrayList<DataPoint> phoneSamplingRateData = new ArrayList<>();
+
+    public float getPhoneAccelSaveDelay(){
+        return phoneAccelDataSet.getDelay();
+    }
+
+    public float getPhoneSamplingRateSaveDelay(){
+        return phoneSamplingRateDataSet.getDelay();
+    }
+
+    public void resetRecordingStatus(){
+        this.phoneAccelDataSet.reset();
+        this.phoneSamplingRateDataSet.reset();
+        this.elapsedSeconds = 0;
+    }
 
     public synchronized void addPhoneAccelDataPoint(long ts, float[] values){
         float[] scaled = new float[3];
         for(int i = 0; i < values.length; i++){
             scaled[i] = values[i] / 9.81f;
         }
-        if(isWriting){
-            phoneAccelAlterBuffer.add(new DataPoint(ts, scaled, "phone_accel"));
-        }else{
-            if(!phoneAccelAlterBuffer.isEmpty()){
-                if(phoneAccelData.isEmpty()) {
-                    System.out.println("The alternative buffer has some data: " + phoneAccelAlterBuffer.size() + ", copy to the original buffer");
-                    for (DataPoint data : phoneAccelAlterBuffer) {
-                        phoneAccelData.add(data);
-                    }
-                    phoneAccelAlterBuffer.clear();
-                }else{
-                    System.out.println("The alternative buffer and orignal buffer both have some data, something is wrong");
-                }
-            }
-            phoneAccelData.add(new DataPoint(ts, scaled, "phone_accel"));
-        }
+        DataPoint point = new DataPoint(ts, scaled, "PhoneAccel");
+        phoneAccelDataSet.addDataPoint(point);
     }
 
-    public synchronized void addPhoneSamplingRateDataPoint(long ts, float sr){
-        phoneSamplingRateData.add(new DataPoint(ts, new float[]{sr}, "phone_sr"));
-    }
-
-    public synchronized void saveData(final Context mContext){
-        isWriting = true;
+    public synchronized void savePhoneAccelData(){
         AsyncExecutor.create().execute(new AsyncExecutor.RunnableEx() {
             @Override
             public void run() throws Exception {
-                savePhoneAccelData(mContext);
-                isWriting = false;
-                savePhoneSamplingRateData();
-                saveSensorInfo(phoneAccelSensor, android.os.Build.MODEL.replace(" ", "") + ".meta.csv");
-                zipEverything();
-                EventBus.getDefault().post(new SnackBarMessageEvent("Saved", false));
+            String root = Environment.getExternalStorageDirectory() + "/sensing/phone/MasterSynced";
+            phoneAccelDataSet.startSaving();
+            phoneAccelDataSet.saveData(root);
+            phoneAccelDataSet.stopSaving();
             }
         });
     }
 
-    public synchronized void saveOnTheFly(final Context mContext){
-        isWriting = true;
+    public synchronized void addPhoneSamplingRateDataPoint(long ts, float sr){
+        DataPoint point = new DataPoint(ts, new float[]{sr}, "PhoneSR");
+        phoneSamplingRateDataSet.addDataPoint(point);
+    }
+
+    public synchronized void savePhoneSamplingRateData(){
         AsyncExecutor.create().execute(new AsyncExecutor.RunnableEx() {
             @Override
             public void run() throws Exception {
-                savePhoneAccelData(mContext);
-                isWriting = false;
+                String root = Environment.getExternalStorageDirectory() + "/sensing/phone/Derived";
+                phoneSamplingRateDataSet.startSaving();
+                phoneSamplingRateDataSet.saveData(root);
+                phoneSamplingRateDataSet.stopSaving();
+            }
+        });
+    }
+
+    public synchronized void saveData(final Context mContext){
+        AsyncExecutor.create().execute(new AsyncExecutor.RunnableEx() {
+            @Override
+            public void run() throws Exception {
+                String root = Environment.getExternalStorageDirectory() + "/sensing/phone/MasterSynced";
+                phoneAccelDataSet.startSaving();
+                phoneAccelDataSet.saveData(root);
+                phoneAccelDataSet.stopSaving();
+                root = Environment.getExternalStorageDirectory() + "/sensing/phone/Derived/";
+                phoneSamplingRateDataSet.startSaving();
+                phoneSamplingRateDataSet.saveData(root);
+                phoneSamplingRateDataSet.stopSaving();
+                saveSensorInfo(phoneAccelSensor, android.os.Build.MODEL.replace(" ", "") + ".meta.csv");
+                zipEverything();
+                EventBus.getDefault().post(new SnackBarMessageEvent("Saved", false));
             }
         });
     }
@@ -158,76 +188,6 @@ public class ApplicationState {
             TelephonyManager telephonyManager = (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
             return telephonyManager.getDeviceId();
         }
-    }
-
-    private void savePhoneAccelData(Context mContext) throws IOException {
-        System.out.println("Start writing data");
-        File folder = new File(Environment.getExternalStorageDirectory() + "/sensing/phone/MasterSynced");
-        if(!folder.exists()){
-            folder.mkdirs();
-        }
-        if(phoneAccelData.size() <= 0) return;
-        BufferedWriter writer = null;
-        int count = 0;
-        int previous = 0;
-        int current;
-        String lastHour = "";
-        String filename;
-        File filepath;
-        for(DataPoint datapoint : phoneAccelData){
-            filename = android.os.Build.MODEL.replace(" ", "") + "-AccelerometerCalibrated-NA." + this.getIMEI(mContext) + "-AccelerometerCalibrated." + datapoint.toTimestampString() + ".sensor.csv";
-            filepath = new File(folder + "/" + filename);
-            if(!lastHour.equals(datapoint.toHourString())){
-                lastHour = datapoint.toHourString();
-                if(filepath.exists()){
-                    writer = new BufferedWriter(new FileWriter(filepath, true));
-                }else {
-                    writer = new BufferedWriter(new FileWriter(filepath, false));
-                    writer.write("HEADER_TIME_STAMP,X,Y,Z");
-                    writer.write(System.lineSeparator());
-                }
-            }
-            if(writer == null){
-                writer = new BufferedWriter(new FileWriter(filepath, false));
-                writer.write("HEADER_TIME_STAMP,X,Y,Z");
-                writer.write(System.lineSeparator());
-            }
-            count++;
-            writer.write(datapoint.toString());
-            writer.write(System.lineSeparator());
-            if((current = Math.round(count / (float)phoneAccelData.size() * 100)) != previous){
-                previous = current;
-                EventBus.getDefault().post(new SnackBarMessageEvent("Saving phone accelerometer data: " + current + "%", false));
-            }
-        }
-        writer.flush();
-        writer.close();
-        phoneAccelData.clear();
-        System.out.println("Finish writing data");
-    }
-
-    private void savePhoneSamplingRateData() throws IOException {
-        File savedFile = new File(Environment.getExternalStorageDirectory() + "/sensing/phone/Derived/", "SamplingRate.feature.csv");
-        if(!savedFile.getParentFile().exists()) savedFile.getParentFile().mkdirs();
-        if(savedFile.exists()) savedFile.delete();
-        if(phoneSamplingRateData.size() <= 0) return;
-        BufferedWriter writer = new BufferedWriter(new FileWriter(savedFile, false));
-        writer.write("HEADER_TIME_STAMP,SR");
-        writer.write(System.lineSeparator());
-        int count = 0;
-        int previous = 0;
-        int current;
-        for(DataPoint datapoint : phoneSamplingRateData){
-            count++;
-            writer.write(datapoint.toString());
-            writer.write(System.lineSeparator());
-            if((current = Math.round(count / (float)phoneSamplingRateData.size() * 100)) != previous){
-                previous = current;
-                EventBus.getDefault().post(new SnackBarMessageEvent("Saving phone sampling rate data: " + current + "%", false));
-            }
-        }
-        writer.flush();
-        writer.close();
     }
 
     private void saveSensorInfo(String sensorInfo, String filename) throws IOException {

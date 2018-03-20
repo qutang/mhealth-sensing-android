@@ -44,7 +44,7 @@ public class MainActivity extends AppCompatActivity {
 
     @BindView(R.id.button_record) FloatingActionButton recordButton;
     @BindView(R.id.button_save) FloatingActionButton saveButton;
-    private ApplicationState state = ApplicationState.getState();
+    private ApplicationState state;
     private Snackbar notification;
     private Timer timer;
     private Context context;
@@ -58,6 +58,7 @@ public class MainActivity extends AppCompatActivity {
         setSupportActionBar(toolbar);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         context = this;
+        state = ApplicationState.getState(context);
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
@@ -87,11 +88,12 @@ public class MainActivity extends AppCompatActivity {
             stopService(new Intent(MainActivity.this, SensingService.class));
         }else{ // before recording start
             EventBus.getDefault().post(new ResetChartEvent());
-            ApplicationState.getState().phoneAccelData.clear();
-            ApplicationState.getState().isWriting = false;
-            ApplicationState.getState().phoneAccelAlterBuffer.clear();
-            ApplicationState.getState().phoneSamplingRateData.clear();
-            state.setElapsedSeconds(0);
+            state.resetRecordingStatus();
+//            state.phoneAccelData.clear();
+//            state.isWriting = false;
+//            state.phoneAccelAlterBuffer.clear();
+//            state.phoneSamplingRateData.clear();
+//            state.setElapsedSeconds(0);
             createSnackBarNotification(view);
             startService(new Intent(MainActivity.this, SensingService.class));
             recordButton.setImageResource(R.drawable.quantum_ic_stop_white_24);

@@ -4,6 +4,7 @@ import android.graphics.Color;
 import android.hardware.SensorEvent;
 import android.support.v4.app.Fragment;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -47,6 +48,8 @@ public class MainActivityFragment extends Fragment {
     private LineDataSet watchZ;
 
     private int count = 0;
+
+    private static final String TAG = "SensingChart";
 
     public MainActivityFragment() {
     }
@@ -126,6 +129,11 @@ public class MainActivityFragment extends Fragment {
         phoneX.addEntry(new Entry(ts, lastEvent.values[0] / 9.81f));
         phoneY.addEntry(new Entry(ts, lastEvent.values[1] / 9.81f));
         phoneZ.addEntry(new Entry(ts, lastEvent.values[2] / 9.81f));
+        if(phoneX.getEntryCount() > 20){
+            phoneX.removeEntry(0);
+            phoneY.removeEntry(0);
+            phoneZ.removeEntry(0);
+        }
         phoneData.notifyDataChanged();
         phoneAccelChart.notifyDataSetChanged();
         phoneAccelChart.setVisibleXRangeMaximum(20);
