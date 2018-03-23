@@ -1,4 +1,4 @@
-package com.example.sensing_lib;
+package io.github.qutang.sensing.shared_android;
 
 import android.content.Context;
 import android.support.test.InstrumentationRegistry;
@@ -21,6 +21,6 @@ public class ExampleInstrumentedTest {
         // Context of the app under test.
         Context appContext = InstrumentationRegistry.getTargetContext();
 
-        assertEquals("com.example.sensing_lib.test", appContext.getPackageName());
+        assertEquals("io.github.qutang.sensing.shared_android.test", appContext.getPackageName());
     }
 }

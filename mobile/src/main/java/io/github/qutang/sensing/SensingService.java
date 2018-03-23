@@ -15,6 +15,7 @@ import android.os.Binder;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.support.annotation.Nullable;
 import android.support.v4.app.NotificationManagerCompat;
 import android.util.Log;
@@ -40,8 +41,7 @@ public class SensingService extends Service implements SensorEventListener2 {
     private java.text.SimpleDateFormat formatter;
     private long previousSr = 0;
     private long previousReport = 0;
-    private long previousPhoneAccelSave = 0;
-    private long previousPhoneSamplingRateSave = 0;
+    private int previousPhoneAccelSave = 0;
     private NotificationManager nm;
     private Context mContext;
     private PowerManager.WakeLock mWakeLock;
@@ -57,24 +57,31 @@ public class SensingService extends Service implements SensorEventListener2 {
     public void onSensorChanged(SensorEvent sensorEvent) {
 
         long ts = 0;
-        if(Math.abs(sensorEvent.timestamp / 1000000L - System.currentTimeMillis()) < 3600000){
+        /*
+        *
+        * https://stackoverflow.com/questions/5500765/accelerometer-sensorevent-timestamp
+        * https://developer.android.com/reference/android/os/SystemClock.html#elapsedRealtimeClock()
+        *
+        * */
+
+        if(Math.abs(sensorEvent.timestamp / 1000000L - System.currentTimeMillis()) < 60000){
             // the sensor event timestamp is the actual time
             ts = sensorEvent.timestamp / 1000000L;
         }else{
             ts = System.currentTimeMillis()
-                    + (sensorEvent.timestamp - System.nanoTime()) / 1000000L;
+                    + (sensorEvent.timestamp - SystemClock.elapsedRealtimeNanos()) / 1000000L;
         }
+
+//        Log.i(TAG, "Sensor timestamp: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(ts));
+
         counter++;
         if(previousSr == 0) previousSr = ts;
 
-        if(previousPhoneAccelSave == 0) previousPhoneAccelSave = ts;
-        if(ts - previousPhoneAccelSave >= mState.getPhoneAccelSaveDelay()){
-            previousPhoneAccelSave = ts;
+        if(previousPhoneAccelSave == 0) previousPhoneAccelSave = Integer.valueOf(new SimpleDateFormat("mm").format(ts));
+        int currentMinute = Integer.valueOf(new SimpleDateFormat("mm").format(ts));
+        if(currentMinute != previousPhoneAccelSave){
+            previousPhoneAccelSave = currentMinute;
             mState.savePhoneAccelData();
-        }
-        if(previousPhoneSamplingRateSave == 0) previousPhoneSamplingRateSave = ts;
-        if(ts - previousPhoneSamplingRateSave >= mState.getPhoneSamplingRateSaveDelay()){
-            previousPhoneSamplingRateSave = ts;
             mState.savePhoneSamplingRateData();
         }
 

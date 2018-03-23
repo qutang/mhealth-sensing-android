@@ -1,7 +1,13 @@
 package io.github.qutang.sensing;
 
+import android.Manifest;
+import android.content.Context;
+import android.content.pm.PackageManager;
 import android.hardware.SensorManager;
+import android.os.Build;
 import android.os.Environment;
+import android.support.v4.content.ContextCompat;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 
 import net.lingala.zip4j.core.ZipFile;
@@ -16,7 +22,9 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.util.ArrayList;
+
+import io.github.qutang.sensing.shared.DataPoint;
+import io.github.qutang.sensing.shared.DataSet;
 
 /**
  * Created by Qu on 9/28/2016.
@@ -24,24 +32,56 @@ import java.util.ArrayList;
 
 public class ApplicationState {
     private static ApplicationState state;
-    private ApplicationState(){}
-    public static ApplicationState getState(){
+    private DataSet wearAccelDataSet;
+    private DataSet wearSamplingRateDataSet;
+    private Context mContext;
+    public static final String TAG = "WearApplicationState";
+
+    private ApplicationState(Context mContext){
+        this.mContext = mContext;
+        this.wearAccelDataSet = new DataSet(android.os.Build.MODEL.replace(" ", ""), Build.SERIAL, "AccelerometerCalibrated", "sensor", "HEADER_TIME_STAMP,X,Y,Z");
+        this.wearSamplingRateDataSet = new DataSet(android.os.Build.MODEL.replace(" ", ""), Build.SERIAL, "AccelerometerSamplingRate", "feature", "HEADER_TIME_STAMP,SR");
+        this.wearAccelDataSet.registerProgressListener(new DataSet.OnDataSaveProgressListener() {
+            @Override
+            public void updateProgress(int percent) {
+                EventBus.getDefault().post(new ContentUpdateEvent("Saving wear accelerometer data: " + percent + "%"));
+            }
+        });
+        this.wearSamplingRateDataSet.registerProgressListener(new DataSet.OnDataSaveProgressListener() {
+            @Override
+            public void updateProgress(int percent) {
+                EventBus.getDefault().post(new ContentUpdateEvent("Saving wear accelerometer sampling rate data: " + percent + "%"));
+            }
+        });
+    }
+
+    public static ApplicationState getState(Context mContext){
         if(state == null){
-            state = new ApplicationState();
+            state = new ApplicationState(mContext);
         }
         return state;
     }
+
     public boolean isRecording = false;
     public synchronized void setRecording(boolean isRecording){
         this.isRecording = isRecording;
     }
 
-    public String watchAccelSensor = "";
-    public synchronized void setWatchAccelSensor(String sensorInfo){
-        this.watchAccelSensor = sensorInfo;
+    public int elapsedSeconds = 0;
+    public synchronized void setElapsedSeconds(int seconds){
+        this.elapsedSeconds = seconds;
     }
 
-    public int watchAccelDelay = SensorManager.SENSOR_DELAY_FASTEST;
+    public String wearAccelSensor = "";
+    public synchronized void setWearAccelSensor(String sensorInfo){
+        this.wearAccelSensor = sensorInfo;
+    }
+
+
+
+    public boolean isWriting = false;
+
+    public int wearAccelDelay = SensorManager.SENSOR_DELAY_FASTEST;
     // NEXUS 4
     // game delay is 50 Hz
     // normal and UI delay is 5 Hz
@@ -53,47 +93,77 @@ public class ApplicationState {
     // game delay is 50 Hz
     // UI delay is 15 Hz
 
-    // WATCH
-    // UI delay is 15 Hz unless being touched
-    // fastest is 200 Hz
-    // game delay is 50 Hz
-    // normal delay is 5 Hz
-
-    public synchronized void setWatchAccelDelay(int sensorDelay){
-        watchAccelDelay = sensorDelay;
+    public synchronized void setWearAccelDelay(int sensorDelay){
+        wearAccelDelay = sensorDelay;
     }
 
-    public ArrayList<DataPoint> watchAccelData = new ArrayList<>();
-    public ArrayList<DataPoint> watchSamplingRateData = new ArrayList<>();
 
-    public synchronized void addWatchAccelDataPoint(long ts, float[] values){
+    public void resetRecordingStatus(){
+        this.wearAccelDataSet.reset();
+        this.wearSamplingRateDataSet.reset();
+        this.elapsedSeconds = 0;
+    }
+
+    public synchronized void addWearAccelDataPoint(long ts, float[] values){
         float[] scaled = new float[3];
         for(int i = 0; i < values.length; i++){
             scaled[i] = values[i] / 9.81f;
         }
-        watchAccelData.add(new DataPoint(ts, scaled));
+        DataPoint point = new DataPoint(ts, scaled, "WearAccel");
+        wearAccelDataSet.addDataPoint(point);
     }
 
-    public synchronized void addWatchSamplingRateDataPoint(long ts, float sr) {
-        watchSamplingRateData.add(new DataPoint(ts, new float[]{sr}));
-    }
-
-    public synchronized void saveData(){
+    public synchronized void saveWearAccelData(){
         AsyncExecutor.create().execute(new AsyncExecutor.RunnableEx() {
             @Override
             public void run() throws Exception {
-                saveWatchAccelData();
-                saveWatchSamplingRateData();
-                saveSensorInfo(watchAccelSensor, "WatchAccelerometer.meta.csv");
+            String root = Environment.getExternalStorageDirectory() + "/sensing/wear/MasterSynced";
+            wearAccelDataSet.startSaving();
+            wearAccelDataSet.saveData(root);
+            wearAccelDataSet.stopSaving();
+            }
+        });
+    }
+
+    public synchronized void addWearSamplingRateDataPoint(long ts, float sr){
+        DataPoint point = new DataPoint(ts, new float[]{sr}, "WearSR");
+        wearSamplingRateDataSet.addDataPoint(point);
+    }
+
+    public synchronized void saveWearSamplingRateData(){
+        AsyncExecutor.create().execute(new AsyncExecutor.RunnableEx() {
+            @Override
+            public void run() throws Exception {
+                String root = Environment.getExternalStorageDirectory() + "/sensing/wear/Derived";
+                wearSamplingRateDataSet.startSaving();
+                wearSamplingRateDataSet.saveData(root);
+                wearSamplingRateDataSet.stopSaving();
+            }
+        });
+    }
+
+    public synchronized void saveData(final Context mContext){
+        AsyncExecutor.create().execute(new AsyncExecutor.RunnableEx() {
+            @Override
+            public void run() throws Exception {
+                String root = Environment.getExternalStorageDirectory() + "/sensing/wear/MasterSynced";
+                wearAccelDataSet.startSaving();
+                wearAccelDataSet.saveData(root);
+                wearAccelDataSet.stopSaving();
+                root = Environment.getExternalStorageDirectory() + "/sensing/wear/Derived/";
+                wearSamplingRateDataSet.startSaving();
+                wearSamplingRateDataSet.saveData(root);
+                wearSamplingRateDataSet.stopSaving();
+                saveSensorInfo(wearAccelSensor, android.os.Build.MODEL.replace(" ", "") + ".meta.csv");
                 zipEverything();
-                EventBus.getDefault().post(new SaveFinishedEvent());
-                Log.i("saved", "saved");
+                EventBus.getDefault().post(new ContentUpdateEvent("Saved"));
             }
         });
     }
 
     private void zipEverything() throws ZipException {
-        File zipFile = new File(Environment.getExternalStorageDirectory() + "/sensing", "watch.zip");
+        EventBus.getDefault().post(new ContentUpdateEvent("Zipping files..."));
+        File zipFile = new File(Environment.getExternalStorageDirectory() + "/sensing", "wear.zip");
         if(!zipFile.getParentFile().exists()) zipFile.getParentFile().mkdirs();
         if(zipFile.exists()) zipFile.delete();
         ZipFile zip = new ZipFile(zipFile);
@@ -101,71 +171,11 @@ public class ApplicationState {
         paras.setCompressionMethod(Zip4jConstants.COMP_DEFLATE);
         paras.setCompressionLevel(Zip4jConstants.DEFLATE_LEVEL_FASTEST);
         paras.setIncludeRootFolder(false);
-        zip.addFolder(Environment.getExternalStorageDirectory() + "/sensing/data", paras);
-    }
-
-    private void saveWatchAccelData()  {
-        File savedFile = new File(Environment.getExternalStorageDirectory() + "/sensing/data", "WatchAccelerometer.sensor.csv");
-        if(!savedFile.getParentFile().exists()) savedFile.getParentFile().mkdirs();
-        if(savedFile.exists()) savedFile.delete();
-        if(watchAccelData.size() <= 0) return;
-        BufferedWriter writer = null;
-        try {
-            writer = new BufferedWriter(new FileWriter(savedFile, false));
-            writer.write("HEADER_TIME_STAMP,X,Y,Z");
-            writer.write(System.lineSeparator());
-            int count = 0;
-            int previous = 0;
-            int current;
-            for(DataPoint datapoint : watchAccelData){
-                count++;
-                writer.write(datapoint.toString());
-                writer.write(System.lineSeparator());
-                if((current = Math.round(count / (float) watchAccelData.size() * 100)) != previous){
-                    previous = current;
-                    EventBus.getDefault().post(new SaveProgressEvent("watch accelerometer", current));
-                }
-            }
-            writer.flush();
-            writer.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-    }
-
-    private void saveWatchSamplingRateData()  {
-        File savedFile = new File(Environment.getExternalStorageDirectory() + "/sensing/data", "WatchAccelerometerSamplingRate.sensor.csv");
-        if(!savedFile.getParentFile().exists()) savedFile.getParentFile().mkdirs();
-        if(savedFile.exists()) savedFile.delete();
-        if(watchSamplingRateData.size() <= 0) return;
-        BufferedWriter writer = null;
-        try {
-            writer = new BufferedWriter(new FileWriter(savedFile, false));
-            writer.write("HEADER_TIME_STAMP,SR");
-            writer.write(System.lineSeparator());
-            int count = 0;
-            int previous = 0;
-            int current;
-            for(DataPoint datapoint : watchSamplingRateData){
-                count++;
-                writer.write(datapoint.toString());
-                writer.write(System.lineSeparator());
-                if((current = Math.round(count / (float) watchSamplingRateData.size() * 100)) != previous){
-                    previous = current;
-                    EventBus.getDefault().post(new SaveProgressEvent("watch sampling rate", current));
-                }
-            }
-            writer.flush();
-            writer.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
+        zip.addFolder(Environment.getExternalStorageDirectory() + "/sensing/wear", paras);
     }
 
     private void saveSensorInfo(String sensorInfo, String filename) throws IOException {
-        File savedFile = new File(Environment.getExternalStorageDirectory() + "/sensing/data", filename);
+        File savedFile = new File(Environment.getExternalStorageDirectory() + "/sensing/wear/Derived/", filename);
         if(!savedFile.getParentFile().exists()) savedFile.getParentFile().mkdirs();
         if(savedFile.exists()) savedFile.delete();
         BufferedWriter writer = new BufferedWriter(new FileWriter(savedFile, false));
@@ -174,6 +184,4 @@ public class ApplicationState {
         writer.flush();
         writer.close();
     }
-
-
 }

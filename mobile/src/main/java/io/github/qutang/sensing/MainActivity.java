@@ -89,11 +89,6 @@ public class MainActivity extends AppCompatActivity {
         }else{ // before recording start
             EventBus.getDefault().post(new ResetChartEvent());
             state.resetRecordingStatus();
-//            state.phoneAccelData.clear();
-//            state.isWriting = false;
-//            state.phoneAccelAlterBuffer.clear();
-//            state.phoneSamplingRateData.clear();
-//            state.setElapsedSeconds(0);
             createSnackBarNotification(view);
             startService(new Intent(MainActivity.this, SensingService.class));
             recordButton.setImageResource(R.drawable.quantum_ic_stop_white_24);

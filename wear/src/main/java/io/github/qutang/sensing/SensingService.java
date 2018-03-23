@@ -13,6 +13,8 @@ import android.hardware.SensorManager;
 import android.os.Binder;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.PowerManager;
+import android.os.SystemClock;
 import android.util.Log;
 import android.widget.Toast;
 
@@ -33,12 +35,16 @@ public class SensingService extends Service implements SensorEventListener2 {
     private SensorManager mSensorManager;
     private Sensor mSensor;
     private int counter = 0;
-    private int anotherCounter = 0;
-    private int seconds = 0;
-    private SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+    private int downSamplingCounter = 0;
+    private SimpleDateFormat formatter;
     private long previousSr = 0;
     private long previousReport = 0;
+    private int previousPhoneAccelSave = 0;
     private NotificationManager nm;
+    private Context mContext;
+    private PowerManager.WakeLock mWakeLock;
+    private ApplicationState mState;
+    private static final String TAG = "SensingService";
 
     @Override
     public void onFlushCompleted(Sensor sensor) {
@@ -47,43 +53,63 @@ public class SensingService extends Service implements SensorEventListener2 {
 
     @Override
     public void onSensorChanged(SensorEvent sensorEvent) {
-        // depend on device model, sensor event may be interpreted differently
-        // Reference: http://stackoverflow.com/questions/5500765/accelerometer-sensorevent-timestamp
+
         long ts = 0;
-        if(Math.abs(sensorEvent.timestamp / 1000000L - System.currentTimeMillis()) < 3600000){
+        /*
+        *
+        * https://stackoverflow.com/questions/5500765/accelerometer-sensorevent-timestamp
+        * https://developer.android.com/reference/android/os/SystemClock.html#elapsedRealtimeClock()
+        *
+        * */
+
+        if(Math.abs(sensorEvent.timestamp / 1000000L - System.currentTimeMillis()) < 60000){
             // the sensor event timestamp is the actual time
             ts = sensorEvent.timestamp / 1000000L;
         }else{
-            // the sensor event timestamp is the elapsed nano seconds since boot up
             ts = System.currentTimeMillis()
-                    + (sensorEvent.timestamp - System.nanoTime()) / 1000000L;
+                    + (sensorEvent.timestamp - SystemClock.elapsedRealtimeNanos()) / 1000000L;
         }
+
+//        Log.i(TAG, "Sensor timestamp: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(ts));
+
+
+        if(downSamplingCounter == 1){
+            downSamplingCounter = 0;
+            return;
+        }
+        downSamplingCounter++;
         counter++;
         if(previousSr == 0) previousSr = ts;
-        if(previousReport == 0) previousReport = ts;
-        if(ts - previousSr >= 1000){ // sampling rate update every 1s
+
+        if(previousPhoneAccelSave == 0) previousPhoneAccelSave = Integer.valueOf(new SimpleDateFormat("mm").format(ts));
+        int currentMinute = Integer.valueOf(new SimpleDateFormat("mm").format(ts));
+        if(currentMinute != previousPhoneAccelSave){
+            previousPhoneAccelSave = currentMinute;
+            mState.saveWearAccelData();
+            mState.saveWearSamplingRateData();
+        }
+
+        if(ts - previousSr >= 1000){
+            mState.setElapsedSeconds(mState.elapsedSeconds + 1);
+            Log.i(TAG, "Accel Sampling rate, " + String.valueOf(counter));
+            mState.addWearSamplingRateDataPoint(ts, counter);
             previousSr = ts;
-            Log.i("Sampling rate", String.valueOf(counter));
-            ApplicationState.getState().addWatchSamplingRateDataPoint(ts, counter);
+            counter = 0;
             String timer = String.format("%02d:%02d:%02d",
-                    seconds / 3600,
-                    seconds % 3600 / 60,
-                    seconds % 3600 % 60);
-            EventBus.getDefault().post(new ContentUpdateEvent(timer + ", " + counter + " Hz, " + anotherCounter + " Hz"));
+                    mState.elapsedSeconds / 3600,
+                    mState.elapsedSeconds % 3600 / 60,
+                    mState.elapsedSeconds % 3600 % 60);
+            EventBus.getDefault().post(new ContentUpdateEvent("Recording: " + timer));
             Notification notification = createForegroundNotification(timer);
             nm.notify(NOTIFICATION_ID, notification);
-            counter = 0;
-            anotherCounter = 0;
-            seconds++;
-            Log.i("Data size", String.valueOf(ApplicationState.getState().watchAccelData.size()));
+
         }
-        if(ts - previousReport >= 50){ // chart updating at 20 Hz
-            previousReport = ts;
-        }
-        if(counter % 2.0 != 0) {
-            anotherCounter++;
-            ApplicationState.getState().addWatchAccelDataPoint(ts, sensorEvent.values);
-        }
+//        if(previousReport == 0) previousReport = ts;
+//        if(ts - previousReport >= 50){ // chart updating at 20 Hz
+//            previousReport = ts;
+//            EventBus.getDefault().post(sensorEvent);
+//        }
+        mState.addWearAccelDataPoint(ts, sensorEvent.values);
     }
 
     @Override
@@ -100,16 +126,22 @@ public class SensingService extends Service implements SensorEventListener2 {
     @Override
     public void onCreate() {
         // Display a notification about us starting.  We put an icon in the status bar.
+        mContext = getApplicationContext();
+        mState = ApplicationState.getState(mContext);
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         mSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-        ApplicationState.getState().setWatchAccelSensor(getPhoneSensorInfo());
+        mState.setWearAccelSensor(getWearSensorInfo());
         nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         counter = 0;
-        seconds = 0;
-        anotherCounter = 0;
+        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+        mWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
+                "SensingService");
+        formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+
+
     }
 
-    public String getPhoneSensorInfo(){
+    public String getWearSensorInfo(){
         StringBuilder builder = new StringBuilder();
         builder.append("FiFoMaxEventCount,").append(mSensor.getFifoMaxEventCount()).append(System.lineSeparator())
                 .append("FiFoReservedEventCount,").append(mSensor.getFifoReservedEventCount()).append(System.lineSeparator())
@@ -124,7 +156,7 @@ public class SensingService extends Service implements SensorEventListener2 {
                 .append("Power,").append(mSensor.getPower()).append(System.lineSeparator())
                 .append("Type,").append(mSensor.getStringType()).append(System.lineSeparator())
                 .append("WakeUpSensor,").append(mSensor.isWakeUpSensor()).append(System.lineSeparator())
-                .append("Delay").append(ApplicationState.getState().watchAccelDelay).append(System.lineSeparator());
+                .append("Delay").append(mState.wearAccelDelay).append(System.lineSeparator());
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             builder.append("DynamicSensor,").append(mSensor.isDynamicSensor()).append(System.lineSeparator())
                     .append("ID,").append(mSensor.getId()).append(System.lineSeparator());
@@ -134,20 +166,35 @@ public class SensingService extends Service implements SensorEventListener2 {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Log.i("LocalService", "Received start id " + startId + ": " + intent);
+        Log.i(TAG, "Received start id " + startId + ": " + intent);
+        mWakeLock.acquire();
+        Log.i(TAG, "Aquired wakelock");
+
         showNotification();
-        mSensorManager.registerListener(this, mSensor, ApplicationState.getState().watchAccelDelay);
-        Toast.makeText(this, "Start sensing", Toast.LENGTH_SHORT).show();
+        Log.i(TAG, "Started foreground service");
+        mSensorManager.registerListener(this, mSensor, mState.wearAccelDelay);
+        Log.i(TAG, "Registered sensor event listener");
+        mState.setElapsedSeconds(0);
         return START_STICKY;
     }
 
     @Override
     public void onDestroy() {
         mSensorManager.unregisterListener(this, mSensor);
+        Log.i(TAG, "Unregistered sensor event listener");
         // Cancel the persistent notification.
         stopForeground(true);
+        Log.i(TAG, "Stopped foreground service");
+        mWakeLock.release();
+        Log.i(TAG, "Released wakelock");
         // Tell the user we stopped.
         Toast.makeText(this, "Stopped sensing", Toast.LENGTH_SHORT).show();
+        save();
+    }
+
+    public void save(){
+        EventBus.getDefault().post(new ContentUpdateEvent("Saving data: 0%"));
+        mState.saveData(mContext);
     }
 
     @Override
@@ -161,7 +208,7 @@ public class SensingService extends Service implements SensorEventListener2 {
 
     private Notification createForegroundNotification(String contentText){
         // In this sample, we'll use the same text for the ticker and the expanded notification
-        CharSequence text = "Sensing watch accelerometer";
+        CharSequence text = "Sensing using phone accelerometer";
 
         // The PendingIntent to launch our activity if the user selects this notification
 
@@ -185,7 +232,6 @@ public class SensingService extends Service implements SensorEventListener2 {
      * Show a notification while this service is running.
      */
     private void showNotification() {
-        // In this sample, we'll use the same text for the ticker and the expanded notification
         Notification notification = createForegroundNotification("00:00:00");
 
         // Send the notification.

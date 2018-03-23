@@ -1,4 +1,4 @@
-package com.example.sensing_lib;
+package io.github.qutang.sensing.shared_android;
 
 import org.junit.Test;
 

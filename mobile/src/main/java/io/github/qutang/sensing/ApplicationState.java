@@ -36,8 +36,8 @@ public class ApplicationState {
 
     private ApplicationState(Context mContext){
         this.mContext = mContext;
-        this.phoneAccelDataSet = new DataSet(android.os.Build.MODEL.replace(" ", ""), getIMEI(mContext), "AccelerometerCalibrated", "sensor", "HEADER_TIME_STAMP,X,Y,Z", 60 * 1000);
-        this.phoneSamplingRateDataSet = new DataSet(android.os.Build.MODEL.replace(" ", ""), getIMEI(mContext), "AccelerometerSamplingRate", "feature", "HEADER_TIME_STAMP,SR", 60 * 1000);
+        this.phoneAccelDataSet = new DataSet(android.os.Build.MODEL.replace(" ", ""), getIMEI(mContext), "AccelerometerCalibrated", "sensor", "HEADER_TIME_STAMP,X,Y,Z");
+        this.phoneSamplingRateDataSet = new DataSet(android.os.Build.MODEL.replace(" ", ""), getIMEI(mContext), "AccelerometerSamplingRate", "feature", "HEADER_TIME_STAMP,SR");
         this.phoneAccelDataSet.registerProgressListener(new DataSet.OnDataSaveProgressListener() {
             @Override
             public void updateProgress(int percent) {
@@ -94,14 +94,6 @@ public class ApplicationState {
         phoneAccelDelay = sensorDelay;
     }
 
-
-    public float getPhoneAccelSaveDelay(){
-        return phoneAccelDataSet.getDelay();
-    }
-
-    public float getPhoneSamplingRateSaveDelay(){
-        return phoneSamplingRateDataSet.getDelay();
-    }
 
     public void resetRecordingStatus(){
         this.phoneAccelDataSet.reset();

@@ -19,7 +19,6 @@ public class DataSet {
     private String fileType;
     private String header;
     private boolean isSaving;
-    private float delay;
     private OnDataSaveProgressListener progressListener;
     private static final String TAG = "DataSet";
 
@@ -27,7 +26,7 @@ public class DataSet {
         public void updateProgress(int percent);
     }
 
-    public DataSet(String deviceName, String deviceId, String dataType, String fileType, String header, float saveDelay){
+    public DataSet(String deviceName, String deviceId, String dataType, String fileType, String header){
         primaryBuffer = new ArrayList<>();
         secondaryBuffer = new ArrayList<>();
         isSaving = false;
@@ -36,21 +35,20 @@ public class DataSet {
         this.dataType = dataType;
         this.fileType = fileType;
         this.header = header;
-        this.delay = saveDelay;
     }
 
     public void registerProgressListener(OnDataSaveProgressListener listener){
         progressListener = listener;
     }
 
+    public boolean isProgressListenerRegistered(){
+        return progressListener != null;
+    }
+
     public void reset(){
         this.primaryBuffer.clear();
         this.secondaryBuffer.clear();
         this.isSaving = false;
-    }
-
-    public float getDelay(){
-        return delay;
     }
 
     public boolean isSaving(){
