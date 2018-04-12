@@ -35,26 +35,33 @@ public class SensingService extends Service implements SensorEventListener2 {
     private SensorManager mSensorManager;
     private Sensor mSensor;
     private int counter = 0;
-    private int downSamplingCounter = 0;
     private SimpleDateFormat formatter;
     private long previousSr = 0;
-    private long previousReport = 0;
+    private long previousTs = 0;
     private int previousPhoneAccelSave = 0;
     private NotificationManager nm;
     private Context mContext;
     private PowerManager.WakeLock mWakeLock;
     private ApplicationState mState;
     private static final String TAG = "SensingService";
+    private int flushCount;
+    private double flushSr;
 
     @Override
     public void onFlushCompleted(Sensor sensor) {
-
+        Log.i(TAG, "Flush is completed");
+        Log.i(TAG, "Flushed " + flushCount + " sensor events");
+        Log.i(TAG, "Flushing sampling rate: " + flushCount / flushSr);
+        Log.i(TAG, "Flushed " + flushSr + " seconds data");
+        mWakeLock.release();
     }
 
     @Override
     public void onSensorChanged(SensorEvent sensorEvent) {
 
         long ts = 0;
+        flushCount++;
+        counter++;
         /*
         *
         * https://stackoverflow.com/questions/5500765/accelerometer-sensorevent-timestamp
@@ -70,16 +77,14 @@ public class SensingService extends Service implements SensorEventListener2 {
                     + (sensorEvent.timestamp - SystemClock.elapsedRealtimeNanos()) / 1000000L;
         }
 
-//        Log.i(TAG, "Sensor timestamp: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(ts));
 
 
-        if(downSamplingCounter == 1){
-            downSamplingCounter = 0;
-            return;
-        }
-        downSamplingCounter++;
-        counter++;
         if(previousSr == 0) previousSr = ts;
+        if(previousTs == 0) previousTs = ts;
+        else{
+            flushSr = (flushSr + (ts - previousTs) / 1000.0);
+            previousTs = ts;
+        }
 
         if(previousPhoneAccelSave == 0) previousPhoneAccelSave = Integer.valueOf(new SimpleDateFormat("mm").format(ts));
         int currentMinute = Integer.valueOf(new SimpleDateFormat("mm").format(ts));
@@ -104,11 +109,6 @@ public class SensingService extends Service implements SensorEventListener2 {
             nm.notify(NOTIFICATION_ID, notification);
 
         }
-//        if(previousReport == 0) previousReport = ts;
-//        if(ts - previousReport >= 50){ // chart updating at 20 Hz
-//            previousReport = ts;
-//            EventBus.getDefault().post(sensorEvent);
-//        }
         mState.addWearAccelDataPoint(ts, sensorEvent.values);
     }
 
@@ -126,19 +126,16 @@ public class SensingService extends Service implements SensorEventListener2 {
     @Override
     public void onCreate() {
         // Display a notification about us starting.  We put an icon in the status bar.
+        flushCount = 0;
+        flushSr = 0;
         mContext = getApplicationContext();
         mState = ApplicationState.getState(mContext);
-        mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
-        mSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-        mState.setWearAccelSensor(getWearSensorInfo());
         nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         counter = 0;
         PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         mWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
                 "SensingService");
         formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
-
-
     }
 
     public String getWearSensorInfo(){
@@ -156,7 +153,7 @@ public class SensingService extends Service implements SensorEventListener2 {
                 .append("Power,").append(mSensor.getPower()).append(System.lineSeparator())
                 .append("Type,").append(mSensor.getStringType()).append(System.lineSeparator())
                 .append("WakeUpSensor,").append(mSensor.isWakeUpSensor()).append(System.lineSeparator())
-                .append("Delay").append(mState.wearAccelDelay).append(System.lineSeparator());
+                .append("Delay,").append(mState.wearAccelDelay).append(System.lineSeparator());
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             builder.append("DynamicSensor,").append(mSensor.isDynamicSensor()).append(System.lineSeparator())
                     .append("ID,").append(mSensor.getId()).append(System.lineSeparator());
@@ -166,16 +163,47 @@ public class SensingService extends Service implements SensorEventListener2 {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Log.i(TAG, "Received start id " + startId + ": " + intent);
-        mWakeLock.acquire();
-        Log.i(TAG, "Aquired wakelock");
+        Log.i(TAG, "Received start id " + startId + ": " + intent.getAction());
 
+        if(intent.getAction().equals("start")){
+            Log.i(TAG, "Aquired wakelock");
+            Log.i(TAG, "Start sensing service");
+            start();
+        }else if(intent.getAction().equals("stop")){
+            Log.i(TAG, "Stop sensing service");
+            stopSelf();
+        }else if(intent.getAction().equals("flush")){
+            mWakeLock.acquire();
+            Log.i(TAG, "Aquired wakelock");
+            Log.i(TAG, "Flushing sensing service");
+            flushCount = 0;
+            flushSr = 0;
+            previousTs = 0;
+            if(mSensorManager != null) {
+                mSensorManager.flush(this);
+            }else{
+
+                start();
+            }
+        }
+        return START_STICKY;
+    }
+
+    public void start() {
+        mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        mSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        String wearAccelInfo = getWearSensorInfo();
+        Log.i(TAG, wearAccelInfo);
+        mState.setWearAccelSensor(wearAccelInfo);
         showNotification();
         Log.i(TAG, "Started foreground service");
-        mSensorManager.registerListener(this, mSensor, mState.wearAccelDelay);
-        Log.i(TAG, "Registered sensor event listener");
+        boolean batchMode = mSensorManager.registerListener(this, mSensor, mState.wearAccelDelay, 60000000);
+        if(batchMode) {
+            Log.i(TAG, "Registered sensor event listener in batch mode");
+        }else {
+            Log.i(TAG, "Batch mode is not supported, registered in continuous mode");
+        }
         mState.setElapsedSeconds(0);
-        return START_STICKY;
     }
 
     @Override

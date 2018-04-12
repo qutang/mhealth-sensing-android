@@ -23,6 +23,7 @@ import java.io.IOException;
 
 import io.github.qutang.sensing.shared.DataPoint;
 import io.github.qutang.sensing.shared.DataSet;
+import io.github.qutang.sensing.shared_android.MediaScanner;
 
 /**
  * Created by Qu on 9/28/2016.
@@ -33,6 +34,7 @@ public class ApplicationState {
     private DataSet phoneAccelDataSet;
     private DataSet phoneSamplingRateDataSet;
     private Context mContext;
+    private MediaScanner mScanner;
 
     private ApplicationState(Context mContext){
         this.mContext = mContext;
@@ -140,6 +142,7 @@ public class ApplicationState {
     }
 
     public synchronized void saveData(final Context mContext){
+        mScanner = new MediaScanner(mContext, new File(Environment.getExternalStorageDirectory() + "/sensing/"), null);
         AsyncExecutor.create().execute(new AsyncExecutor.RunnableEx() {
             @Override
             public void run() throws Exception {
@@ -154,6 +157,7 @@ public class ApplicationState {
                 saveSensorInfo(phoneAccelSensor, android.os.Build.MODEL.replace(" ", "") + ".meta.csv");
                 zipEverything();
                 EventBus.getDefault().post(new SnackBarMessageEvent("Saved", false));
+                mScanner.scan();
             }
         });
     }

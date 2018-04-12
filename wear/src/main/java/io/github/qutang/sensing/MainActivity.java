@@ -72,12 +72,14 @@ public class MainActivity extends Activity {
     @OnClick(R.id.btn_watch_record)
     public void record(View view){
         if(state.isRecording){
-            stopService(new Intent(MainActivity.this, SensingService.class));
+//            stopService(new Intent(MainActivity.this, SensingService.class));
+            state.stopRecording();
             recordButton.setText("Start");
             title.setText("Saving data...");
         }else{
             state.resetRecordingStatus();
-            startService(new Intent(MainActivity.this, SensingService.class));
+//            startService(new Intent(MainActivity.this, SensingService.class));
+            state.startRecording();
             recordButton.setText("Stop");
             title.setText("Recording...");
             content.setText("00:00:00" + ", 0 Hz");

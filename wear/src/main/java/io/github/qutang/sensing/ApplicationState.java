@@ -2,6 +2,7 @@ package io.github.qutang.sensing;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.hardware.SensorManager;
 import android.os.Build;
@@ -25,6 +26,8 @@ import java.io.IOException;
 
 import io.github.qutang.sensing.shared.DataPoint;
 import io.github.qutang.sensing.shared.DataSet;
+import io.github.qutang.sensing.shared_android.MediaScanner;
+import io.github.qutang.sensing.shared_android.repeated_service.MinuteAlarmManager;
 
 /**
  * Created by Qu on 9/28/2016.
@@ -35,10 +38,13 @@ public class ApplicationState {
     private DataSet wearAccelDataSet;
     private DataSet wearSamplingRateDataSet;
     private Context mContext;
+    private MediaScanner mMediaScanner;
+    private MinuteAlarmManager mAlarm;
     public static final String TAG = "WearApplicationState";
 
     private ApplicationState(Context mContext){
         this.mContext = mContext;
+        this.mAlarm = new MinuteAlarmManager(mContext);
         this.wearAccelDataSet = new DataSet(android.os.Build.MODEL.replace(" ", ""), Build.SERIAL, "AccelerometerCalibrated", "sensor", "HEADER_TIME_STAMP,X,Y,Z");
         this.wearSamplingRateDataSet = new DataSet(android.os.Build.MODEL.replace(" ", ""), Build.SERIAL, "AccelerometerSamplingRate", "feature", "HEADER_TIME_STAMP,SR");
         this.wearAccelDataSet.registerProgressListener(new DataSet.OnDataSaveProgressListener() {
@@ -77,7 +83,18 @@ public class ApplicationState {
         this.wearAccelSensor = sensorInfo;
     }
 
+    public void startRecording() {
+        mAlarm.start(SensingService.class);
+        this.isRecording = true;
+    }
 
+    public void stopRecording() {
+        mAlarm.cancel();
+        this.isRecording = false;
+        Intent serviceIntent = new Intent(mContext, SensingService.class);
+        serviceIntent.setAction("stop");
+        mContext.startService(serviceIntent);
+    }
 
     public boolean isWriting = false;
 
@@ -143,6 +160,8 @@ public class ApplicationState {
     }
 
     public synchronized void saveData(final Context mContext){
+        String path = Environment.getExternalStorageDirectory() + "/sensing/";
+        mMediaScanner = new MediaScanner(mContext, new File(path), null);
         AsyncExecutor.create().execute(new AsyncExecutor.RunnableEx() {
             @Override
             public void run() throws Exception {
@@ -157,12 +176,14 @@ public class ApplicationState {
                 saveSensorInfo(wearAccelSensor, android.os.Build.MODEL.replace(" ", "") + ".meta.csv");
                 zipEverything();
                 EventBus.getDefault().post(new ContentUpdateEvent("Saved"));
+                mMediaScanner.scan();
             }
         });
     }
 
     private void zipEverything() throws ZipException {
         EventBus.getDefault().post(new ContentUpdateEvent("Zipping files..."));
+        Log.i(TAG, "Start zipping files...");
         File zipFile = new File(Environment.getExternalStorageDirectory() + "/sensing", "wear.zip");
         if(!zipFile.getParentFile().exists()) zipFile.getParentFile().mkdirs();
         if(zipFile.exists()) zipFile.delete();
