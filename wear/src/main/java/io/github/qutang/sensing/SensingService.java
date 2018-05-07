@@ -46,6 +46,7 @@ public class SensingService extends Service implements SensorEventListener2 {
     private static final String TAG = "SensingService";
     private int flushCount;
     private double flushSr;
+    private int skipSample = 0;
 
     @Override
     public void onFlushCompleted(Sensor sensor) {
@@ -61,7 +62,7 @@ public class SensingService extends Service implements SensorEventListener2 {
 
         long ts = 0;
         flushCount++;
-        counter++;
+
         /*
         *
         * https://stackoverflow.com/questions/5500765/accelerometer-sensorevent-timestamp
@@ -77,7 +78,13 @@ public class SensingService extends Service implements SensorEventListener2 {
                     + (sensorEvent.timestamp - SystemClock.elapsedRealtimeNanos()) / 1000000L;
         }
 
-
+        if(skipSample == 1){
+            skipSample = 0;
+            return;
+        }else{
+            counter++;
+            skipSample = 1;
+        }
 
         if(previousSr == 0) previousSr = ts;
         if(previousTs == 0) previousTs = ts;
@@ -167,13 +174,13 @@ public class SensingService extends Service implements SensorEventListener2 {
 
         if(intent.getAction().equals("start")){
             Log.i(TAG, "Aquired wakelock");
+            mWakeLock.acquire();
             Log.i(TAG, "Start sensing service");
             start();
         }else if(intent.getAction().equals("stop")){
             Log.i(TAG, "Stop sensing service");
             stopSelf();
         }else if(intent.getAction().equals("flush")){
-            mWakeLock.acquire();
             Log.i(TAG, "Aquired wakelock");
             Log.i(TAG, "Flushing sensing service");
             flushCount = 0;
@@ -197,11 +204,11 @@ public class SensingService extends Service implements SensorEventListener2 {
         mState.setWearAccelSensor(wearAccelInfo);
         showNotification();
         Log.i(TAG, "Started foreground service");
-        boolean batchMode = mSensorManager.registerListener(this, mSensor, mState.wearAccelDelay, 60000000);
+        boolean batchMode = mSensorManager.registerListener(this, mSensor, mState.wearAccelDelay);
         if(batchMode) {
             Log.i(TAG, "Registered sensor event listener in batch mode");
         }else {
-            Log.i(TAG, "Batch mode is not supported, registered in continuous mode");
+            Log.i(TAG, "Registered in continuous mode");
         }
         mState.setElapsedSeconds(0);
     }

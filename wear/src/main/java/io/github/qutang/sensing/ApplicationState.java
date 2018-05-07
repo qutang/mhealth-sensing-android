@@ -63,6 +63,7 @@ public class ApplicationState {
 
     public static ApplicationState getState(Context mContext){
         if(state == null){
+            Log.i(TAG, "Created a new application state");
             state = new ApplicationState(mContext);
         }
         return state;

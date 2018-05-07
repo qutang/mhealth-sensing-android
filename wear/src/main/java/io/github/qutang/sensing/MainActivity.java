@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.wearable.view.WatchViewStub;
+import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -32,8 +33,11 @@ public class MainActivity extends Activity {
 
     private ApplicationState state;
 
+    private static final String TAG = "MainActivity";
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        Log.i(TAG, "onCreate");
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
@@ -41,7 +45,9 @@ public class MainActivity extends Activity {
         stub.setOnLayoutInflatedListener(new WatchViewStub.OnLayoutInflatedListener() {
             @Override
             public void onLayoutInflated(WatchViewStub stub) {
+                Log.i(TAG, "onLayoutInflatedListener");
                 ButterKnife.bind(MainActivity.this,stub);
+                Log.i(TAG, String.valueOf(state.isRecording));
                 if(state.isRecording){
                     recordButton.setText("Stop");
                     title.setText("Recording...");
@@ -59,12 +65,21 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onStart() {
+        Log.i(TAG, "onStart");
         EventBus.getDefault().register(this);
         super.onStart();
     }
 
+
+    @Override
+    protected void onResume() {
+        Log.i(TAG, "onResume");
+        super.onResume();
+    }
+
     @Override
     protected void onStop() {
+        Log.i(TAG, "onStop");
         EventBus.getDefault().unregister(this);
         super.onStop();
     }
@@ -84,7 +99,7 @@ public class MainActivity extends Activity {
             title.setText("Recording...");
             content.setText("00:00:00" + ", 0 Hz");
         }
-        state.setRecording(!state.isRecording);
+//        state.setRecording(!state.isRecording);
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)

@@ -26,8 +26,8 @@ public class MinuteAlarmManager {
         startServiceIntent.setAction("start");
         alarmIntent = PendingIntent.getService(mContext, 0, serviceIntent, 0);
         mContext.startService(startServiceIntent);
-        alarmMgr.setRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                SystemClock.elapsedRealtime() + 60 * 1000, 60 * 1000, alarmIntent);
+//        alarmMgr.setRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP,
+//                SystemClock.elapsedRealtime() + 60 * 1000, 60 * 1000, alarmIntent);
     }
 
     public void cancel() {
